@@ -1,0 +1,24 @@
+{
+    "manifest_version": 3,
+    "name": "WebRTC Advanced Recorder",
+    "version": "1.1",
+    "permissions": [
+        "tabCapture",
+        "activeTab",
+        "microphone",
+        "downloads",
+        "desktopCapture",
+        "scripting",
+        "tabs"
+    ],
+    "host_permissions": [
+        "<all_urls>",
+        "chrome-extension://*"
+    ],
+    "action": {
+        "default_popup": "popup.html"
+    },
+    "background": {
+        "service_worker": "background.js"
+    }
+}
