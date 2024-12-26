@@ -1,7 +1,10 @@
 {
     "manifest_version": 3,
-    "name": "WebRTC Advanced Recorder",
+    "name": "FOSS Transcription",
+    "description": "A free and open-source screen and audio recording tool for transcription purposes",
     "version": "1.1",
+    "icons": {        
+    },
     "permissions": [
         "tabCapture",
         "activeTab",
@@ -16,7 +19,10 @@
         "chrome-extension://*"
     ],
     "action": {
-        "default_popup": "popup.html"
+        "default_popup": "popup.html",
+        "default_icon": {
+            
+        }
     },
     "background": {
         "service_worker": "background.js"

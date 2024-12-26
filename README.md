@@ -1,6 +1,6 @@
-# WebRTC Advanced Recorder - Chrome Extension
+# FOSS Transcription - Chrome Extension
 
-A FOSS Chrome extension that allows you to record your screen and microphone audio simultaneously using WebRTC.
+A free and open-source Chrome extension that allows you to record your screen and microphone audio simultaneously using WebRTC technology, perfect for transcription purposes.
 
 ## Features
 
