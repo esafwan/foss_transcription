@@ -1,5 +1,104 @@
 let mediaRecorder;
 let recordedChunks = [];
+let directoryHandle = null;
+
+// Function to store directory handle
+async function storeDirHandle(handle) {
+    try {
+        // Convert directory handle to serializable format
+        const serializedHandle = await handle.requestPermission({ mode: 'readwrite' });
+        await chrome.storage.local.set({
+            'fossTranscriptionDirHandle': handle,
+            'lastPermissionTime': Date.now()
+        });
+        directoryHandle = handle;
+    } catch (error) {
+        console.error('Failed to store directory handle:', error);
+    }
+}
+
+// Function to get stored directory handle
+async function getStoredDirHandle() {
+    try {
+        const result = await chrome.storage.local.get(['fossTranscriptionDirHandle', 'lastPermissionTime']);
+        if (result.fossTranscriptionDirHandle) {
+            const handle = result.fossTranscriptionDirHandle;
+            // Check if permission is still valid
+            const permission = await handle.queryPermission({ mode: 'readwrite' });
+            if (permission === 'granted') {
+                directoryHandle = handle;
+                return handle;
+            }
+        }
+        return null;
+    } catch (error) {
+        console.error('Failed to get stored directory handle:', error);
+        return null;
+    }
+}
+
+// Function to get or create directory handle
+async function getDirectoryHandle() {
+    // Try to get stored handle first
+    const storedHandle = await getStoredDirHandle();
+    if (storedHandle) {
+        return storedHandle;
+    }
+
+    try {
+        // Request root directory access
+        const rootHandle = await window.showDirectoryPicker({
+            mode: 'readwrite',
+            startIn: 'documents',
+            id: 'fossTranscription' // Add a unique ID for the picker
+        });
+
+        // Try to get or create FOSSTranscription directory
+        try {
+            directoryHandle = await rootHandle.getDirectoryHandle('FOSSTranscription', {
+                create: true
+            });
+            // Store the handle for future use
+            await storeDirHandle(directoryHandle);
+            return directoryHandle;
+        } catch (error) {
+            console.error('Failed to create FOSSTranscription directory:', error);
+            // Store the root handle as fallback
+            await storeDirHandle(rootHandle);
+            return rootHandle;
+        }
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            return null; // User cancelled directory picker
+        }
+        throw error;
+    }
+}
+
+// Modified save function to use directory handle
+async function saveRecordingToFile(blob, suggestedName) {
+    try {
+        const dirHandle = await getDirectoryHandle();
+        if (!dirHandle) {
+            throw new Error('No directory access');
+        }
+
+        // Create file in the directory
+        const fileHandle = await dirHandle.getFileHandle(suggestedName, {
+            create: true
+        });
+
+        // Write the file
+        const writable = await fileHandle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+
+        return fileHandle;
+    } catch (error) {
+        console.error('Save error:', error);
+        throw error;
+    }
+}
 
 async function initializeRecording() {
     try {
@@ -42,40 +141,54 @@ async function initializeRecording() {
                 chrome.runtime.sendMessage({ type: 'processingStart' });
                 
                 const blob = new Blob(recordedChunks, { type: 'video/webm' });
-                const url = URL.createObjectURL(blob);
                 
                 chrome.runtime.sendMessage({ 
                     type: 'recordingComplete',
                     size: blob.size
                 });
 
-                // Create a valid filename
                 const timestamp = new Date()
                     .toISOString()
-                    .replace(/[:.]/g, '-')  // Replace invalid characters
-                    .slice(0, 19);  // Take only the date and time part
-                
-                // Save the file
+                    .replace(/[:.]/g, '-')
+                    .slice(0, 19);
+                const suggestedName = `recording_${timestamp}.webm`;
+
                 try {
+                    const fileHandle = await saveRecordingToFile(blob, suggestedName);
+                    
+                    if (fileHandle) {
+                        chrome.runtime.sendMessage({ 
+                            type: 'savingComplete',
+                            message: 'Recording saved to FOSSTranscription folder!'
+                        });
+                    } else {
+                        // Fallback to chrome.downloads
+                        const url = URL.createObjectURL(blob);
+                        await chrome.downloads.download({
+                            url: url,
+                            filename: `FOSSTranscription/${suggestedName}`
+                        });
+                        URL.revokeObjectURL(url);
+                        
+                        chrome.runtime.sendMessage({ 
+                            type: 'savingComplete',
+                            message: 'Recording saved to downloads/FOSSTranscription folder!'
+                        });
+                    }
+                } catch (saveError) {
+                    // Fallback to default download if file system access fails
+                    const url = URL.createObjectURL(blob);
                     await chrome.downloads.download({
                         url: url,
-                        filename: `recording_${timestamp}.webm`,
-                        saveAs: true
+                        filename: `FOSSTranscription/${suggestedName}`
                     });
+                    URL.revokeObjectURL(url);
                     
                     chrome.runtime.sendMessage({ 
                         type: 'savingComplete',
-                        message: 'Recording saved successfully! Check your downloads folder.'
-                    });
-                } catch (saveError) {
-                    chrome.runtime.sendMessage({ 
-                        type: 'savingError',
-                        error: `Failed to save: ${saveError.message}`
+                        message: 'Recording saved to downloads/FOSSTranscription folder!'
                     });
                 }
-                
-                // Clean up
-                URL.revokeObjectURL(url);
                 
             } catch (error) {
                 chrome.runtime.sendMessage({ 
